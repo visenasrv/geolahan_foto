@@ -5,6 +5,7 @@ Aplikasi web untuk dokumentasi titik lahan di lapangan:
 - **Titik GPS** (bisa digeser manual di peta satelit)
 - **Foto lapangan** dari kamera HP dengan watermark waktu, koordinat, akurasi, dan alamat
 - **Citra satelit** titik yang sama, lengkap dengan skala meter dan arah utara
+- **Batas & luas lahan**: gambar bentuk lahan di peta (ketuk atau berjalan ke tiap sudut dengan GPS), luas m²/ha dan keliling dihitung otomatis
 - Tersimpan otomatis ke **Google Drive** (gambar) dan **Google Sheets** (data)
 - **Bisa dipakai tanpa sinyal**: titik antre di HP dan terkirim saat online
 - Ekspor **KML** untuk Google Earth / My Maps

@@ -42,6 +42,11 @@ const state = {
   fotoDraft: null,
   terakhir: null,
   petaMini: null, pinMini: null, kotakMini: null,
+  modePeta: 'titik',      // 'titik' | 'batas'
+  batas: [],              // sudut lahan yang sedang digambar: [{lat, lng}, ...]
+  lapisBatas: null,       // L.layerGroup berisi poligon + penanda sudut
+  poliBatas: null,
+  sedangGeser: false,
   peta: null, layerTitik: null, markerById: {},
   lokasiSaya: {},         // penanda posisi saya per peta
   detail: { rec: null, aktif: 'citra', url: {}, blobUrl: [] },
@@ -139,6 +144,13 @@ function pasangEvent() {
 
   // Ambil titik
   byId('btnIkutiGps').addEventListener('click', ikutiGPS);
+  document.querySelectorAll('.segmen [data-mode]').forEach(b => b.addEventListener('click', () => setModePeta(b.dataset.mode)));
+  byId('btnPetaPenuh').addEventListener('click', () => togglePetaPenuh());
+  byId('btnSelesaiPenuh').addEventListener('click', () => togglePetaPenuh(false));
+  byId('btnSudutGps').addEventListener('click', sudutDariGps);
+  byId('btnUrungSudut').addEventListener('click', urungSudut);
+  byId('btnTengahLahan').addEventListener('click', titikKeTengah);
+  byId('btnHapusBatas').addEventListener('click', hapusSemuaBatas);
   byId('btnHapusKet').addEventListener('click', () => { byId('inputKeterangan').value = ''; byId('inputKeterangan').focus(); });
   byId('btnAmbilFoto').addEventListener('click', ambilFoto);
   byId('btnUlangiFoto').addEventListener('click', ambilFoto);
@@ -369,8 +381,20 @@ function initPetaMini() {
   const m = L.map('petaMini', { zoomControl: true, attributionControl: true });
   lapisanSatelit().addTo(m);
   m.setView([-2.5, 118], 4);
-  m.on('click', (e) => pindahTitik(e.latlng.lat, e.latlng.lng, 'peta', false));
+  m.on('click', (e) => {
+    if (state.modePeta === 'batas') tambahSudut(e.latlng.lat, e.latlng.lng);
+    else pindahTitik(e.latlng.lat, e.latlng.lng, 'peta', false);
+  });
   state.petaMini = m;
+  state.lapisBatas = L.layerGroup().addTo(m);
+
+  // Lanjutkan batas lahan yang belum disimpan (mis. halaman sempat tertutup)
+  const draf = bacaLokal('geofoto_draft_batas', []);
+  if (Array.isArray(draf) && draf.length) {
+    state.batas = draf.filter(p => isFinite(p.lat) && isFinite(p.lng));
+    setModePeta('batas');
+    if (state.batas.length) m.fitBounds(L.latLngBounds(state.batas.map(p => [p.lat, p.lng])), { padding: [40, 40], maxZoom: 19 });
+  }
 }
 
 function pindahTitik(lat, lng, mode, pusatkan) {
@@ -402,10 +426,8 @@ function ikutiGPS() {
 function gambarKotakCakupan() {
   if (!state.petaMini || !state.titik) return;
   const t = state.titik;
-  const setengah = 320 * meterPerPiksel(t.lat, Number(state.pengaturan.zoom));
-  const dLat = setengah / 111320;
-  const dLng = setengah / (111320 * Math.cos(t.lat * Math.PI / 180));
-  const batas = [[t.lat - dLat, t.lng - dLng], [t.lat + dLat, t.lng + dLng]];
+  const r = rencanaCitra(t.lat, t.lng, batasAktif(), Number(state.pengaturan.zoom) || 18);
+  const batas = batasGambar(r.pusat, r.zoom);
   if (!state.kotakMini) {
     state.kotakMini = L.rectangle(batas, { color: '#ffffff', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(state.petaMini);
   } else {
@@ -427,6 +449,265 @@ function renderTitik() {
     chip.innerHTML = '<i class="bi bi-hand-index"></i> <span>Dipilih di peta' + esc(jarak) + '</span>';
   }
   byId('btnIkutiGps').disabled = t.mode === 'gps' || !state.posisi;
+}
+
+// ════════════════════════════════════════════════════════
+// BAGIAN 5b: BATAS & LUAS LAHAN
+// ════════════════════════════════════════════════════════
+
+function setModePeta(mode) {
+  state.modePeta = mode;
+  document.querySelectorAll('.segmen [data-mode]').forEach(b => b.classList.toggle('aktif', b.dataset.mode === mode));
+  const batas = mode === 'batas';
+  byId('wadahPetaMini').classList.toggle('mode-batas', batas);
+  byId('panelBatas').classList.toggle('d-none', !batas);
+  byId('petunjukPeta').textContent = batas
+    ? 'Ketuk peta di setiap sudut lahan secara berurutan (searah keliling), atau berdiri di sudut lalu tekan "Sudut GPS". Geser bulatan kuning untuk merapikan; ketuk bulatan untuk menghapusnya.'
+    : 'Ketuk peta atau geser pin untuk memindah titik. Kotak putih = area citra satelit yang akan diambil.';
+  if (batas && !state.batas.length && state.petaMini && state.titik) {
+    state.petaMini.setView([state.titik.lat, state.titik.lng], Math.max(state.petaMini.getZoom(), 18));
+  }
+  renderBatas();
+  if (state.petaMini) requestAnimationFrame(() => state.petaMini.invalidateSize());
+}
+
+function togglePetaPenuh(paksa) {
+  const wadah = byId('wadahPetaMini');
+  const penuh = typeof paksa === 'boolean' ? paksa : !wadah.classList.contains('penuh');
+  wadah.classList.toggle('penuh', penuh);
+  document.body.classList.toggle('peta-penuh-aktif', penuh);
+  byId('btnPetaPenuh').innerHTML = penuh ? '<i class="bi bi-fullscreen-exit"></i>' : '<i class="bi bi-arrows-fullscreen"></i>';
+  byId('btnSelesaiPenuh').classList.toggle('d-none', !penuh);
+  if (state.petaMini) setTimeout(() => state.petaMini.invalidateSize(), 60);
+}
+
+/** Batas yang sedang digambar sebagai [[lat,lng],...] (null bila < 3 sudut). */
+function batasAktif() {
+  return state.batas.length >= 3 ? state.batas.map(p => [p.lat, p.lng]) : null;
+}
+
+function tambahSudut(lat, lng) {
+  state.batas.push({ lat, lng });
+  simpanDrafBatas();
+  renderBatas();
+}
+
+function hapusSudut(i) {
+  if (state.petaMini) state.petaMini.closePopup();
+  state.batas.splice(i, 1);
+  simpanDrafBatas();
+  renderBatas();
+}
+
+function urungSudut() {
+  if (!state.batas.length) return;
+  state.batas.pop();
+  simpanDrafBatas();
+  renderBatas();
+}
+
+function hapusSemuaBatas() {
+  if (!state.batas.length) return;
+  if (!confirm('Hapus semua ' + state.batas.length + ' sudut batas lahan?')) return;
+  state.batas = [];
+  simpanDrafBatas();
+  renderBatas();
+}
+
+async function sudutDariGps() {
+  const btn = byId('btnSudutGps');
+  btn.disabled = true;
+  try {
+    const p = await kunciLokasi();
+    tambahSudut(p.lat, p.lng);
+    if (state.petaMini) state.petaMini.panTo([p.lat, p.lng]);
+    if (p.akurasi > 15) showToast('Akurasi GPS ±' + Math.round(p.akurasi) + ' m', 'Sudut tetap ditambahkan. Untuk hasil lebih tepat, tunggu status hijau atau rapikan sudut di peta.', 'warning');
+    else showToast('Sudut ' + state.batas.length + ' ditambahkan', 'Akurasi ±' + Math.round(p.akurasi) + ' m. Berjalan ke sudut berikutnya.', 'success');
+  } catch (e) {
+    showToast('GPS belum siap', e.message, 'warning');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function titikKeTengah() {
+  const b = batasAktif();
+  if (!b) { showToast('Batas belum lengkap', 'Tambahkan minimal 3 sudut dulu.', 'warning'); return; }
+  const c = pusatPoligon(b);
+  pindahTitik(c[0], c[1], 'peta', false);
+  showToast('Titik dipindah', 'Titik lahan sekarang berada di tengah batas lahan.', 'info');
+}
+
+function simpanDrafBatas() { simpanLokal('geofoto_draft_batas', state.batas); }
+
+function renderBatas() {
+  const m = state.petaMini;
+  if (m && state.lapisBatas) {
+    state.lapisBatas.clearLayers();
+    state.poliBatas = null;
+    const ll = state.batas.map(p => [p.lat, p.lng]);
+    if (ll.length >= 3) {
+      state.poliBatas = L.polygon(ll, { color: '#ffd21f', weight: 3, fillColor: '#ffd21f', fillOpacity: 0.22, interactive: false }).addTo(state.lapisBatas);
+    } else if (ll.length === 2) {
+      state.poliBatas = L.polyline(ll, { color: '#ffd21f', weight: 3, dashArray: '6 6', interactive: false }).addTo(state.lapisBatas);
+    }
+    state.batas.forEach((p, i) => {
+      const ikon = L.divIcon({
+        className: 'sudut-wrap',
+        html: '<div class="sudut-titik' + (i === 0 ? ' pertama' : '') + '">' + (i + 1) + '</div>',
+        iconSize: [22, 22], iconAnchor: [11, 11]
+      });
+      const mk = L.marker([p.lat, p.lng], { icon: ikon, draggable: state.modePeta === 'batas', zIndexOffset: 900 }).addTo(state.lapisBatas);
+      mk.on('drag', (e) => {
+        const q = e.target.getLatLng();
+        state.batas[i] = { lat: q.lat, lng: q.lng };
+        if (state.poliBatas) state.poliBatas.setLatLngs(state.batas.map(x => [x.lat, x.lng]));
+        renderInfoBatas();
+      });
+      mk.on('dragend', () => { simpanDrafBatas(); renderBatas(); });
+      mk.bindPopup('<div class="popup-sudut">Sudut ' + (i + 1) + '<br><button type="button" onclick="hapusSudut(' + i + ')">Hapus sudut</button></div>');
+    });
+  }
+  renderInfoBatas();
+  gambarKotakCakupan();
+}
+
+function renderInfoBatas() {
+  const n = state.batas.length;
+  const b = batasAktif();
+  const utama = byId('teksLuas'), sub = byId('teksLuasSub'), ringkas = byId('ringkasBatas');
+  byId('btnUrungSudut').disabled = !n;
+  byId('btnHapusBatas').disabled = !n;
+  byId('btnTengahLahan').disabled = !b;
+  sub.classList.remove('peringatan');
+
+  if (!b) {
+    utama.textContent = n + ' sudut';
+    sub.textContent = n === 0 ? 'Ketuk peta di setiap sudut lahan' : 'Butuh minimal 3 sudut (kurang ' + (3 - n) + ')';
+    ringkas.classList.add('d-none');
+    byId('subSimpan').textContent = 'Citra satelit + foto → Drive & Sheets';
+    return;
+  }
+  const u = ukurPoligon(b);
+  const f = formatLuas(u.luas);
+  utama.textContent = f.m2 + ' · ' + f.ha;
+  if (bersilangan(b)) {
+    sub.textContent = '⚠ Garis batas bersilangan — geser sudut agar luas benar';
+    sub.classList.add('peringatan');
+  } else {
+    sub.textContent = 'Keliling ' + formatMeter(u.keliling) + ' · ' + n + ' sudut';
+  }
+  ringkas.classList.remove('d-none');
+  ringkas.innerHTML = '<i class="bi bi-bounding-box-circles"></i> Batas lahan: <b>' + esc(f.m2) + '</b> (' + esc(f.ha) + ') · keliling ' +
+    esc(formatMeter(u.keliling)) + ' · ' + n + ' sudut — ikut tersimpan bersama titik ini.';
+  byId('subSimpan').textContent = 'Citra satelit + batas ' + f.ha + ' → Drive & Sheets';
+}
+
+/**
+ * Luas (m²) & keliling (m) — proyeksi datar lokal dengan jari-jari elipsoid WGS84.
+ * Rumus identik dengan ukurPoligon_ di Kode.gs.
+ */
+function ukurPoligon(titik) {
+  const A = 6378137, E2 = 0.00669437999014, rad = Math.PI / 180;
+  let lat0 = 0;
+  titik.forEach(p => { lat0 += p[0]; });
+  lat0 /= titik.length;
+  const lng0 = titik[0][1];
+  const sin0 = Math.sin(lat0 * rad), w = 1 - E2 * sin0 * sin0;
+  const N = A / Math.sqrt(w), M = A * (1 - E2) / Math.pow(w, 1.5);
+  const kx = rad * N * Math.cos(lat0 * rad), ky = rad * M;
+  const xy = titik.map(p => [(p[1] - lng0) * kx, (p[0] - lat0) * ky]);
+  let jumlah = 0, keliling = 0;
+  for (let i = 0; i < xy.length; i++) {
+    const a = xy[i], b = xy[(i + 1) % xy.length];
+    jumlah += a[0] * b[1] - b[0] * a[1];
+    keliling += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  return { luas: Math.abs(jumlah) / 2, keliling: keliling };
+}
+
+/** Apakah ada dua sisi yang saling memotong (bentuk "pita"/angka 8)? */
+function bersilangan(titik) {
+  const n = titik.length;
+  if (n < 4) return false;
+  const orient = (a, b, c) => Math.sign((b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]));
+  for (let i = 0; i < n; i++) {
+    const a1 = titik[i], a2 = titik[(i + 1) % n];
+    for (let j = i + 1; j < n; j++) {
+      if (j === i || (j + 1) % n === i || (i + 1) % n === j) continue; // sisi bersebelahan
+      const b1 = titik[j], b2 = titik[(j + 1) % n];
+      if (orient(a1, a2, b1) * orient(a1, a2, b2) < 0 && orient(b1, b2, a1) * orient(b1, b2, a2) < 0) return true;
+    }
+  }
+  return false;
+}
+
+/** Titik berat (centroid) poligon; jatuh ke rata-rata sudut bila luas ~0. */
+function pusatPoligon(titik) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < titik.length; i++) {
+    const p = titik[i], q = titik[(i + 1) % titik.length];
+    const f = p[1] * q[0] - q[1] * p[0];
+    a += f; cx += (p[1] + q[1]) * f; cy += (p[0] + q[0]) * f;
+  }
+  if (Math.abs(a) < 1e-14) {
+    return [titik.reduce((s, p) => s + p[0], 0) / titik.length, titik.reduce((s, p) => s + p[1], 0) / titik.length];
+  }
+  return [cy / (3 * a), cx / (3 * a)];
+}
+
+function formatAngka(n, desimal) {
+  return Number(n).toLocaleString('id-ID', { minimumFractionDigits: desimal, maximumFractionDigits: desimal });
+}
+function formatLuas(m2) {
+  const ha = m2 / 10000;
+  return {
+    m2: formatAngka(m2, m2 < 100 ? 1 : 0) + ' m²',
+    ha: formatAngka(ha, ha < 1 ? 4 : 2) + ' ha'
+  };
+}
+function formatMeter(m) { return m < 1000 ? formatAngka(m, 1) + ' m' : formatAngka(m / 1000, 2) + ' km'; }
+
+// ── Proyeksi Web Mercator (sama dengan Google Static Maps, tile 256 px) ──
+function proyeksiPx(lat, lng, zoom) {
+  const skala = 256 * Math.pow(2, zoom);
+  const siny = Math.min(Math.max(Math.sin(lat * Math.PI / 180), -0.9999), 0.9999);
+  return {
+    x: (lng + 180) / 360 * skala,
+    y: (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * skala
+  };
+}
+function pxKeLatLng(x, y, zoom) {
+  const skala = 256 * Math.pow(2, zoom);
+  return {
+    lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * y / skala))) * 180 / Math.PI,
+    lng: x / skala * 360 - 180
+  };
+}
+
+/** Batas geografis gambar satelit 640×640 px dengan pusat & zoom tertentu. */
+function batasGambar(pusat, zoom) {
+  const c = proyeksiPx(pusat.lat, pusat.lng, zoom);
+  const sw = pxKeLatLng(c.x - 320, c.y + 320, zoom), ne = pxKeLatLng(c.x + 320, c.y - 320, zoom);
+  return [[sw.lat, sw.lng], [ne.lat, ne.lng]];
+}
+
+/**
+ * Tentukan pusat & zoom citra satelit. Tanpa batas: pusat = titik, zoom = pengaturan.
+ * Dengan batas: seluruh batas + titik dimuat dalam bingkai (sisa tepi ±40 px).
+ */
+function rencanaCitra(lat, lng, batas, zoomSetel) {
+  if (!batas || batas.length < 3) return { pusat: { lat, lng }, zoom: zoomSetel };
+  const semua = batas.concat([[lat, lng]]);
+  for (let z = zoomSetel; z >= 12; z--) {
+    const px = semua.map(p => proyeksiPx(p[0], p[1], z));
+    const minX = Math.min(...px.map(p => p.x)), maxX = Math.max(...px.map(p => p.x));
+    const minY = Math.min(...px.map(p => p.y)), maxY = Math.max(...px.map(p => p.y));
+    if (maxX - minX <= 560 && maxY - minY <= 560 || z === 12) {
+      return { pusat: pxKeLatLng((minX + maxX) / 2, (minY + maxY) / 2, z), zoom: z };
+    }
+  }
+  return { pusat: { lat, lng }, zoom: zoomSetel };
 }
 
 // ════════════════════════════════════════════════════════
@@ -543,7 +824,8 @@ async function buatCitraWatermark(base64, mime, rec) {
 
   const alamat = rec.alamat && rec.alamat.lengkap ? rec.alamat.lengkap : '';
   const zoom = Number(rec.zoom) || 18;
-  const mpp = meterPerPiksel(rec.lat, zoom);               // meter per piksel asli
+  const pusat = rec.pusat || { lat: rec.lat, lng: rec.lng };
+  const mpp = meterPerPiksel(pusat.lat, zoom);             // meter per piksel asli
   const cakupan = Math.round(mpp * img.naturalWidth);
   const sumber = rec.sumber === 'peta'
     ? 'Titik: dipilih di peta'
@@ -554,6 +836,7 @@ async function buatCitraWatermark(base64, mime, rec) {
     ['CITRA SATELIT · TITIK LAHAN', 20, 800, '#7fe0a6', 1],
     [rec.keterangan, 30, 800, '#ffe49a', 2],
     [formatWaktuPanjang(new Date(rec.waktuIso)), 24, 700, '#ffffff', 2],
+    [rec.batas ? 'Luas lahan ± ' + formatLuas(rec.luas).m2 + ' (' + formatLuas(rec.luas).ha + ')   ·   Keliling ' + formatMeter(rec.keliling) + '   ·   ' + rec.batas.length + ' sudut' : '', 25, 800, '#ffd21f', 2],
     ['Lat ' + rec.lat.toFixed(6) + '    Long ' + rec.lng.toFixed(6), 27, 800, '#b8f3cd', 1],
     [keDMS(rec.lat, 'lat') + '    ' + keDMS(rec.lng, 'lng'), 21, 500, '#e7eee9', 1],
     [sumber + '   ·   Zoom ' + zoom + '   ·   Cakupan ±' + cakupan + ' × ' + cakupan + ' m', 21, 500, '#e7eee9', 2],
@@ -569,6 +852,8 @@ async function buatCitraWatermark(base64, mime, rec) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, W, H);
 
+  if (rec.batas) gambarBatasDiCitra(ctx, rec.batas, pusat, zoom, faktor, s, rec.luas);
+
   ctx.fillStyle = '#121a15';
   ctx.fillRect(0, H, W, tp);
   gambarPanel(ctx, baris, 0, H, W, s, false);
@@ -580,6 +865,49 @@ async function buatCitraWatermark(base64, mime, rec) {
   const blob = await canvasKeBlob(canvas, 0.9);
   canvas.width = 0; canvas.height = 0;
   return blob;
+}
+
+/** Gambar poligon batas lahan + nomor sudut + label luas di atas citra satelit. */
+function gambarBatasDiCitra(ctx, batas, pusat, zoom, faktor, s, luas) {
+  const c = proyeksiPx(pusat.lat, pusat.lng, zoom);
+  const pt = batas.map(p => {
+    const q = proyeksiPx(p[0], p[1], zoom);
+    return [(q.x - c.x + 320) * faktor, (q.y - c.y + 320) * faktor];
+  });
+  ctx.save();
+  ctx.beginPath();
+  pt.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255, 210, 31, 0.20)';
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 7 * s; ctx.stroke();
+  ctx.strokeStyle = '#ffd21f'; ctx.lineWidth = 3.5 * s; ctx.stroke();
+
+  // Nomor sudut
+  ctx.font = '800 ' + Math.round(15 * s) + 'px ' + FONT_WM;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  pt.forEach((p, i) => {
+    ctx.fillStyle = i === 0 ? '#3fbf74' : '#ffd21f';
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5 * s;
+    ctx.beginPath(); ctx.arc(p[0], p[1], 12 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = i === 0 ? '#ffffff' : '#1b2a21';
+    ctx.fillText(String(i + 1), p[0], p[1] + 0.5 * s);
+  });
+
+  // Label luas di tengah lahan
+  const ll = pusatPoligon(batas);
+  const q = proyeksiPx(ll[0], ll[1], zoom);
+  // digeser ke bawah agar tidak tertutup pin merah Google bila titik ada di tengah lahan
+  const lx = (q.x - c.x + 320) * faktor, ly = (q.y - c.y + 320) * faktor + 34 * s;
+  const label = formatLuas(luas).ha;
+  ctx.font = '800 ' + Math.round(22 * s) + 'px ' + FONT_WM;
+  const lw = ctx.measureText(label).width + 22 * s, lh = 36 * s;
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  kotakBulat(ctx, lx - lw / 2, ly - lh / 2, lw, lh, 10 * s); ctx.fill();
+  ctx.fillStyle = '#ffd21f';
+  ctx.fillText(label, lx, ly + 1 * s);
+  ctx.restore();
 }
 
 /** Meter per piksel peta web (Web Mercator, tile 256 px). */
@@ -782,6 +1110,17 @@ function tampilkanProses(tampil, teks) {
 async function simpanTitikBaru() {
   if (state.sedangProses) return;
   if (!state.titik) { showToast('Titik belum ada', 'Tunggu GPS atau ketuk peta untuk memilih titik.', 'warning'); return; }
+  if (state.batas.length && state.batas.length < 3) {
+    showToast('Batas lahan belum lengkap', 'Butuh minimal 3 sudut, atau hapus sudut yang ada bila tidak ingin menyimpan batas.', 'warning');
+    setModePeta('batas');
+    return;
+  }
+  if (batasAktif() && bersilangan(batasAktif())) {
+    showToast('Garis batas bersilangan', 'Geser sudut-sudutnya dulu agar batas tidak saling memotong, supaya luasnya benar.', 'warning');
+    setModePeta('batas');
+    return;
+  }
+  togglePetaPenuh(false);
 
   state.sedangProses = true;
   tampilkanProses(true, 'Mengunci titik...');
@@ -796,6 +1135,9 @@ async function simpanTitikBaru() {
     const t = state.titik;
     const waktu = new Date();
     const f = state.fotoDraft;
+    const batas = batasAktif();
+    const ukur = batas ? ukurPoligon(batas) : null;
+    const rencana = rencanaCitra(t.lat, t.lng, batas, Number(state.pengaturan.zoom) || 18);
 
     rec = {
       id: 'T' + stempel(waktu) + '_' + Math.random().toString(36).slice(2, 6),
@@ -804,7 +1146,11 @@ async function simpanTitikBaru() {
       lat: t.lat, lng: t.lng, akurasi, altitude,
       sumber: t.mode,
       keterangan: byId('inputKeterangan').value.trim(),
-      zoom: Number(state.pengaturan.zoom) || 18,
+      zoom: rencana.zoom,
+      pusat: rencana.pusat,
+      batas: batas,
+      luas: ukur ? ukur.luas : null,
+      keliling: ukur ? ukur.keliling : null,
       foto: f ? { blob: f.blob, lat: f.lat, lng: f.lng, akurasi: f.akurasi } : null,
       citraBlob: null,
       alamat: null,
@@ -817,11 +1163,12 @@ async function simpanTitikBaru() {
     await dbSimpan('antrean', rec);
     state.antrean = await dbSemua('antrean');
     state.fotoDraft = null; renderFotoDraft();
+    if (batas) { state.batas = []; simpanDrafBatas(); setModePeta('titik'); }
     if (t.mode === 'peta' && state.posisi) ikutiGPS();
 
     const hasil = await kirimSatu(rec, true);
     tampilkanHasil(hasil, rec);
-    showToast('Titik tersimpan', 'Citra satelit' + (rec.foto ? ' & foto lapangan' : '') + ' masuk ke Drive, data tercatat di Sheets.', 'success');
+    showToast('Titik tersimpan', 'Citra satelit' + (rec.foto ? ' & foto lapangan' : '') + ' masuk ke Drive, data' + (rec.batas ? ' & luas ' + formatLuas(rec.luas).ha : '') + ' tercatat di Sheets.', 'success');
   } catch (err) {
     cekGalatKoneksi(err);
     if (rec) {
@@ -845,9 +1192,11 @@ async function kirimSatu(rec, tampil) {
 
     if (!rec.citraBlob) {
       langkah('Mengambil citra satelit...');
-      const c = await panggil('ambilCitraSatelit', rec.lat, rec.lng, rec.zoom);
+      const pusat = rec.pusat || { lat: rec.lat, lng: rec.lng };
+      const c = await panggil('ambilCitraSatelit', rec.lat, rec.lng, rec.zoom, pusat.lat, pusat.lng);
       rec.alamat = c.alamat || null;
       rec.zoom = c.zoom || rec.zoom;
+      rec.pusat = c.pusat || pusat;
       langkah('Menyusun citra & keterangan...');
       rec.citraBlob = await buatCitraWatermark(c.base64, c.mime, rec);
       if (!rec.thumb) rec.thumb = await thumbDariBlob(rec.citraBlob, 220);
@@ -862,6 +1211,7 @@ async function kirimSatu(rec, tampil) {
       namaDasar: 'Titik_' + stempel(new Date(rec.waktuIso)),
       fotoLat: rec.foto ? rec.foto.lat : null, fotoLng: rec.foto ? rec.foto.lng : null,
       thumb: rec.thumb,
+      batas: rec.batas ? { koordinat: rec.batas } : null,
       citraBase64: await blobKeBase64(rec.citraBlob),
       fotoBase64: rec.foto ? await blobKeBase64(rec.foto.blob) : ''
     };
@@ -918,6 +1268,7 @@ function tampilkanHasil(hasil, rec) {
   img.src = url || hasil.thumb;
   byId('hasilInfo').innerHTML = '<b>' + esc(hasil.keterangan || 'Titik lahan') + '</b> · ' + esc(hasil.waktu) +
     '<br>' + esc(hasil.lat.toFixed(6) + ', ' + hasil.lng.toFixed(6)) + ' · ' + esc(hasil.sumber) +
+    (hasil.luas ? '<br><span class="lencana-luas"><i class="bi bi-bounding-box-circles"></i> ' + esc(formatLuas(hasil.luas).m2 + ' · ' + formatLuas(hasil.luas).ha) + '</span>' : '') +
     (hasil.alamat ? '<br>' + esc(hasil.alamat) : '');
 }
 
@@ -1030,6 +1381,7 @@ function renderRiwayat() {
         <div class="kartu-waktu">${esc(r.waktu)}</div>
         <div class="kartu-koordinat">${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</div>
         ${r.keterangan ? `<div class="kartu-ket">${esc(r.keterangan)}</div>` : ''}
+        ${r.luas ? `<span class="lencana-luas"><i class="bi bi-bounding-box-circles"></i> ${esc(formatLuas(r.luas).ha)}</span>` : ''}
       </div>
     </button>`;
   }).join('');
@@ -1060,6 +1412,10 @@ function bukaDetail(id) {
     ['Akurasi', r.akurasi === null || r.akurasi === undefined ? '—' : '±' + Math.round(r.akurasi) + ' m'],
     ['Alamat', r.antre ? (r.alamat && r.alamat.lengkap) || '—' : (r.alamat || '—')],
     ['Keterangan', r.keterangan || '—'],
+    ...(r.luas ? [
+      ['Luas lahan', formatLuas(r.luas).m2 + ' (' + formatLuas(r.luas).ha + ')'],
+      ['Keliling', formatMeter(r.keliling || 0) + (r.batas ? ' · ' + r.batas.length + ' sudut' : '')]
+    ] : []),
     ['Status', r.antre ? (r.status === 'gagal' ? 'Belum terkirim — ' + r.pesan : 'Menunggu dikirim') : 'Tersimpan di Drive & Sheets']
   ];
   byId('detailInfo').innerHTML = info.map(([k, v]) =>
@@ -1205,6 +1561,10 @@ function renderTitikPeta(sesuaikan) {
       html: '<div class="pin-foto' + (r.antre ? ' antre' : '') + '">' + isi + '</div><span class="pin-ekor"></span>',
       iconSize: [44, 54], iconAnchor: [22, 54], popupAnchor: [0, -50]
     });
+    if (r.batas && r.batas.length >= 3) {
+      L.polygon(r.batas, { color: r.antre ? '#f0a202' : '#ffd21f', weight: 2.5, fillColor: '#ffd21f', fillOpacity: 0.18 })
+        .bindPopup(htmlPopup(r), { maxWidth: 240 }).addTo(state.layerTitik);
+    }
     state.markerById[r.id] = L.marker([r.lat, r.lng], { icon: ikon, title: r.keterangan || r.waktu })
       .bindPopup(htmlPopup(r), { maxWidth: 240 }).addTo(state.layerTitik);
   });
@@ -1217,6 +1577,7 @@ function htmlPopup(r) {
     '<div class="p-waktu">' + esc(r.keterangan || 'Titik lahan') + '</div>' +
     '<div class="p-koor">' + esc(r.waktu) + '</div>' +
     '<div class="p-koor">' + r.lat.toFixed(6) + ', ' + r.lng.toFixed(6) + (r.antre ? ' · <b>belum terkirim</b>' : '') + '</div>' +
+    (r.luas ? '<div class="p-koor"><b>Luas ' + esc(formatLuas(r.luas).m2 + ' · ' + formatLuas(r.luas).ha) + '</b></div>' : '') +
     '<div class="p-aksi">' +
       '<a href="' + esc(linkMaps(r)) + '" target="_blank" rel="noopener">Google Maps</a>' +
       '<button type="button" onclick="bukaDetail(\'' + esc(r.id) + '\')">Detail</button>' +
@@ -1267,15 +1628,26 @@ function eksporKML() {
   const x = (s) => String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const titik = list.slice().reverse().map((r, i) => {
     const alamat = r.antre ? (r.alamat && r.alamat.lengkap) : r.alamat;
-    const desk = ['Waktu: ' + r.waktu, alamat ? 'Alamat: ' + alamat : '', r.citraUrl ? 'Citra: ' + r.citraUrl : '', r.fotoUrl ? 'Foto: ' + r.fotoUrl : '']
+    const desk = ['Waktu: ' + r.waktu, alamat ? 'Alamat: ' + alamat : '',
+      r.luas ? 'Luas: ' + formatLuas(r.luas).m2 + ' (' + formatLuas(r.luas).ha + '), keliling ' + formatMeter(r.keliling || 0) : '',
+      r.citraUrl ? 'Citra: ' + r.citraUrl : '', r.fotoUrl ? 'Foto: ' + r.fotoUrl : '']
       .filter(Boolean).join('\n');
+    const titikKml = '<Point><coordinates>' + r.lng.toFixed(7) + ',' + r.lat.toFixed(7) + '</coordinates></Point>';
+    let geometri = '    ' + titikKml + '\n';
+    if (r.batas && r.batas.length >= 3) {
+      const cincin = r.batas.concat([r.batas[0]]).map(p => p[1].toFixed(7) + ',' + p[0].toFixed(7) + ',0').join(' ');
+      geometri = '    <MultiGeometry>\n      ' + titikKml + '\n' +
+        '      <Polygon><outerBoundaryIs><LinearRing><coordinates>' + cincin + '</coordinates></LinearRing></outerBoundaryIs></Polygon>\n' +
+        '    </MultiGeometry>\n';
+    }
     return '  <Placemark>\n    <name>' + x(r.keterangan || ('Titik ' + (i + 1))) + '</name>\n' +
-      '    <description>' + x(desk) + '</description>\n' +
-      '    <Point><coordinates>' + r.lng.toFixed(7) + ',' + r.lat.toFixed(7) + '</coordinates></Point>\n  </Placemark>';
+      '    <description>' + x(desk) + '</description>\n    <styleUrl>#lahan</styleUrl>\n' + geometri + '  </Placemark>';
   }).join('\n');
   // '<' + '?xml' ditulis terpisah agar tidak dibaca sebagai scriptlet GAS
   const kml = '<' + '?xml version="1.0" encoding="UTF-8"?' + '>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
-    '  <name>Titik Lahan</name>\n' + titik + '\n</Document>\n</kml>\n';
+    '  <name>Titik Lahan</name>\n' +
+    '  <Style id="lahan"><LineStyle><color>ff1fd2ff</color><width>3</width></LineStyle><PolyStyle><color>401fd2ff</color></PolyStyle></Style>\n' +
+    titik + '\n</Document>\n</kml>\n';
   unduhBlob(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }), 'Titik_Lahan_' + stempel(new Date()) + '.kml');
   showToast('KML diunduh', 'Buka dengan Google Earth atau impor ke Google My Maps.', 'success');
 }

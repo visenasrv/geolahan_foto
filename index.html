@@ -78,20 +78,45 @@
         </div>
       </div>
 
-      <!-- Titik lahan (peta mini satelit) -->
+      <!-- Titik & batas lahan (peta mini satelit) -->
       <div class="kartu mt-3">
         <div class="d-flex align-items-center justify-content-between mb-2 gap-2">
-          <div class="label-kecil"><i class="bi bi-pin-map"></i> Titik lahan</div>
+          <div class="label-kecil"><i class="bi bi-pin-map"></i> Titik &amp; batas lahan</div>
           <span id="chipTitik" class="chip-titik gps"><i class="bi bi-crosshair"></i> <span>Mengikuti GPS</span></span>
         </div>
-        <div class="wadah-peta-mini">
-          <div id="petaMini"></div>
+
+        <div class="segmen mb-2" role="tablist" aria-label="Mode peta">
+          <button type="button" class="aktif" data-mode="titik" id="modeTitik"><i class="bi bi-geo-alt-fill"></i> Titik</button>
+          <button type="button" data-mode="batas" id="modeBatas"><i class="bi bi-bounding-box-circles"></i> Batas lahan</button>
         </div>
+
+        <div class="wadah-peta-mini" id="wadahPetaMini">
+          <div id="petaMini"></div>
+          <button type="button" class="btn-peta btn-layar-penuh" id="btnPetaPenuh" aria-label="Perbesar peta"><i class="bi bi-arrows-fullscreen"></i></button>
+
+          <!-- Panel alat batas lahan (muncul di mode Batas) -->
+          <div class="panel-batas d-none" id="panelBatas">
+            <div class="info-luas">
+              <div class="luas-utama" id="teksLuas">0 sudut</div>
+              <div class="luas-sub" id="teksLuasSub">Ketuk peta di setiap sudut lahan</div>
+            </div>
+            <div class="aksi-batas">
+              <button type="button" id="btnSudutGps" title="Tambah sudut dari posisi GPS"><i class="bi bi-crosshair"></i><span>Sudut GPS</span></button>
+              <button type="button" id="btnUrungSudut" title="Urungkan sudut terakhir"><i class="bi bi-arrow-counterclockwise"></i><span>Urungkan</span></button>
+              <button type="button" id="btnTengahLahan" title="Pindahkan titik ke tengah lahan"><i class="bi bi-bullseye"></i><span>Titik tengah</span></button>
+              <button type="button" id="btnHapusBatas" class="bahaya" title="Hapus semua sudut"><i class="bi bi-trash3"></i><span>Hapus</span></button>
+              <button type="button" id="btnSelesaiPenuh" class="selesai d-none"><i class="bi bi-check2"></i><span>Selesai</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div id="ringkasBatas" class="ringkas-batas d-none"></div>
+
         <div class="d-flex align-items-center justify-content-between mt-2 gap-2">
           <div class="teks-titik" id="teksTitik">Menunggu GPS...</div>
           <button type="button" class="btn btn-garis btn-sm" id="btnIkutiGps" disabled><i class="bi bi-crosshair"></i> Ikuti GPS</button>
         </div>
-        <div class="form-text">Ketuk peta atau geser pin untuk memindah titik. Kotak putih = area citra satelit yang akan diambil.</div>
+        <div class="form-text" id="petunjukPeta">Ketuk peta atau geser pin untuk memindah titik. Kotak putih = area citra satelit yang akan diambil.</div>
       </div>
 
       <!-- Keterangan -->
@@ -131,7 +156,7 @@
           <i class="bi bi-cloud-arrow-up-fill"></i>
           <span>
             <b>Simpan Titik</b>
-            <small>Citra satelit + foto → Drive &amp; Sheets</small>
+            <small id="subSimpan">Citra satelit + foto → Drive &amp; Sheets</small>
           </span>
         </button>
       </div>
@@ -245,7 +270,7 @@
         </div>
       </div>
 
-      <p class="text-center text-secondary-app small mt-4 mb-0">GeoFoto Lahan v3.0.0</p>
+      <p class="text-center text-secondary-app small mt-4 mb-0">GeoFoto Lahan v3.1.0</p>
     </section>
   </main>
 

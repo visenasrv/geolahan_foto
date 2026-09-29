@@ -388,3 +388,71 @@ body {
 
 .pin-foto.antre { border-color: #f0a202; }
 .pin-foto .bi { color: #fff; font-size: 1.2rem; display: grid; place-items: center; height: 100%; }
+
+/* ════════ v3.1 — Batas lahan ════════ */
+.segmen { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--bg-soft); border-radius: 12px; }
+.segmen button { border: none; background: transparent; color: var(--text-secondary); font-weight: 700; font-size: .85rem; padding: 8px; border-radius: 9px; }
+.segmen button.aktif { background: var(--bg-card); color: var(--accent); box-shadow: var(--shadow); }
+
+.wadah-peta-mini.mode-batas { height: 430px; }
+/* Mode normal: panel alat di BAWAH peta (tidak menutupi area ketuk) */
+.wadah-peta-mini.mode-batas:not(.penuh) #petaMini { bottom: 126px; }
+.wadah-peta-mini:not(.penuh) .panel-batas {
+  left: 0; right: 0; bottom: 0; height: 126px; border-radius: 0; box-shadow: none;
+  background: #121a15; backdrop-filter: none; padding: 8px 10px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.wadah-peta-mini:not(.penuh) .info-luas { display: block; margin-bottom: 6px; }
+.wadah-peta-mini:not(.penuh) .luas-utama { font-size: .98rem; line-height: 1.2; }
+.wadah-peta-mini:not(.penuh) .luas-sub { line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btn-layar-penuh { position: absolute; top: 10px; right: 10px; z-index: 600; width: 38px; height: 38px; font-size: 1rem; }
+.wadah-peta-mini.penuh {
+  position: fixed; inset: 0; z-index: 2000; height: auto !important; border-radius: 0; border: none;
+}
+body.peta-penuh-aktif { overflow: hidden; }
+.wadah-peta-mini.penuh .btn-layar-penuh { top: calc(10px + env(safe-area-inset-top)); }
+.wadah-peta-mini .leaflet-control-attribution { font-size: 9px; }
+
+.panel-batas {
+  position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 600;
+  background: rgba(18, 26, 21, .88); color: #fff; border-radius: 14px; padding: 8px 10px;
+  backdrop-filter: blur(6px); box-shadow: 0 4px 16px rgba(0,0,0,.35);
+}
+.wadah-peta-mini.penuh .panel-batas { bottom: calc(12px + env(safe-area-inset-bottom)); left: 12px; right: 12px; padding: 12px; }
+.info-luas { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.luas-utama { font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums; color: #ffe49a; }
+.luas-sub { font-size: .72rem; color: #cfdad3; }
+.luas-sub.peringatan { color: #ffb4a8; font-weight: 700; }
+.aksi-batas { display: flex; gap: 6px; }
+.aksi-batas button {
+  flex: 1; min-width: 0; border: none; border-radius: 10px; padding: 6px 4px; min-height: 44px;
+  background: rgba(255,255,255,.12); color: #fff; font-size: .68rem; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+}
+.aksi-batas button i { font-size: 1rem; }
+.aksi-batas button:active { background: rgba(255,255,255,.24); }
+.aksi-batas button:disabled { opacity: .35; }
+.aksi-batas button.bahaya { color: #ffb4a8; }
+.aksi-batas button.selesai { background: var(--accent); }
+
+.sudut-wrap { background: none; border: none; }
+.sudut-titik {
+  width: 22px; height: 22px; border-radius: 50%; background: #ffd21f; border: 3px solid #fff;
+  box-shadow: 0 1px 5px rgba(0,0,0,.5); color: #1b2a21; font-size: 10px; font-weight: 800;
+  display: grid; place-items: center; line-height: 1;
+}
+.sudut-titik.pertama { background: #3fbf74; color: #fff; }
+.popup-sudut { text-align: center; font-family: 'Plus Jakarta Sans', sans-serif; }
+.popup-sudut button { margin-top: 6px; border: none; border-radius: 8px; padding: 6px 12px; background: #d64541; color: #fff; font-weight: 700; font-size: .8rem; }
+
+.ringkas-batas {
+  margin-top: 8px; padding: 8px 12px; border-radius: 12px; font-size: .85rem;
+  background: color-mix(in srgb, #ffd21f 16%, var(--bg-card)); border: 1px solid color-mix(in srgb, #d9a800 40%, transparent);
+}
+.ringkas-batas b { font-variant-numeric: tabular-nums; }
+.lencana-luas {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 3px;
+  font-size: .7rem; font-weight: 800; color: #9a7400; background: color-mix(in srgb, #ffd21f 22%, transparent);
+  padding: 2px 7px; border-radius: 999px;
+}
+[data-theme="dark"] .lencana-luas { color: #ffe49a; }

@@ -6,7 +6,7 @@
  *  - Apps Script & tile peta: tidak disentuh (langsung ke internet)
  * Naikkan VERSI_CACHE setiap kali mengubah daftar file di bawah.
  */
-const VERSI_CACHE = 'geofoto-v3.0.0';
+const VERSI_CACHE = 'geofoto-v3.1.0';
 
 const FILE_APLIKASI = [
   './',
