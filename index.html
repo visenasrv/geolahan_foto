@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2e7d4f">
+  <meta name="description" content="Dokumentasi titik lahan: foto lapangan + citra satelit dengan koordinat GPS, tersimpan ke Google Drive & Sheets.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="img/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="img/icon-192.png">
+  <title>GeoFoto Lahan</title>
+
+  <!-- Bootstrap 5 + Ikon -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <!-- Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Leaflet (peta) -->
+  <link href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ═══ Loading awal ═══ -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="logo-besar"><i class="bi bi-geo-alt-fill"></i></div>
+    <div class="spinner-border mt-3" role="status"><span class="visually-hidden">Memuat...</span></div>
+    <p class="mt-3 mb-0">Menyiapkan GeoFoto Lahan...</p>
+  </div>
+
+  <!-- ═══ Overlay proses ═══ -->
+  <div id="overlayProses" class="overlay-proses" aria-live="polite">
+    <div class="kotak-proses">
+      <div class="spinner-border" role="status"></div>
+      <p id="teksProses" class="mt-3 mb-0">Memproses...</p>
+    </div>
+  </div>
+
+  <!-- ═══ Top bar ═══ -->
+  <header class="topbar">
+    <div class="topbar-isi">
+      <div class="brand">
+        <span class="brand-ikon"><i class="bi bi-geo-alt-fill"></i></span>
+        <div>
+          <div class="brand-nama">GeoFoto Lahan</div>
+          <div id="pageTitle" class="brand-sub">Ambil titik</div>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span id="indikatorOnline" class="indikator-online" title="Status koneksi"><i class="bi bi-cloud-check"></i></span>
+        <button type="button" class="btn-ikon" id="btnTema" aria-label="Ganti tema"><i class="bi bi-moon-stars"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <!-- ═══════════ SECTION: AMBIL TITIK ═══════════ -->
+    <section id="section-ambil" class="content-section active">
+
+      <!-- Kartu GPS -->
+      <div class="kartu kartu-gps">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="label-kecil"><i class="bi bi-broadcast"></i> Sinyal GPS</div>
+          <span id="gpsStatus" class="status-gps cari"><span class="titik"></span><span id="gpsStatusTeks">Mencari sinyal...</span></span>
+        </div>
+        <div class="gps-koordinat">
+          <div><span class="gps-label">Lat</span><span id="gpsLat">—</span></div>
+          <div><span class="gps-label">Long</span><span id="gpsLng">—</span></div>
+        </div>
+        <div id="gpsDms" class="gps-dms">Aktifkan lokasi (GPS) di HP Anda</div>
+        <div class="gps-bar"><div id="gpsBar" class="gps-bar-isi cari"></div></div>
+        <div class="gps-statistik">
+          <div><div class="stat-nilai" id="gpsAkurasi">—</div><div class="stat-label">Akurasi</div></div>
+          <div><div class="stat-nilai" id="gpsAlt">—</div><div class="stat-label">Ketinggian</div></div>
+          <div><div class="stat-nilai" id="gpsUmur">—</div><div class="stat-label">Diperbarui</div></div>
+        </div>
+      </div>
+
+      <!-- Titik lahan (peta mini satelit) -->
+      <div class="kartu mt-3">
+        <div class="d-flex align-items-center justify-content-between mb-2 gap-2">
+          <div class="label-kecil"><i class="bi bi-pin-map"></i> Titik lahan</div>
+          <span id="chipTitik" class="chip-titik gps"><i class="bi bi-crosshair"></i> <span>Mengikuti GPS</span></span>
+        </div>
+        <div class="wadah-peta-mini">
+          <div id="petaMini"></div>
+        </div>
+        <div class="d-flex align-items-center justify-content-between mt-2 gap-2">
+          <div class="teks-titik" id="teksTitik">Menunggu GPS...</div>
+          <button type="button" class="btn btn-garis btn-sm" id="btnIkutiGps" disabled><i class="bi bi-crosshair"></i> Ikuti GPS</button>
+        </div>
+        <div class="form-text">Ketuk peta atau geser pin untuk memindah titik. Kotak putih = area citra satelit yang akan diambil.</div>
+      </div>
+
+      <!-- Keterangan -->
+      <div class="kartu mt-3">
+        <label for="inputKeterangan" class="label-kecil mb-2"><i class="bi bi-tag"></i> Keterangan titik</label>
+        <div class="input-group">
+          <input type="text" id="inputKeterangan" class="form-control" maxlength="80" placeholder="mis. Lahan Pak Budi – sudut utara">
+          <button class="btn btn-garis" type="button" id="btnHapusKet" aria-label="Kosongkan keterangan"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="form-text">Dicetak di gambar dan dicatat di Sheets. Tetap terisi untuk titik berikutnya.</div>
+      </div>
+
+      <!-- Foto lapangan -->
+      <div class="kartu mt-3">
+        <div class="label-kecil mb-2"><i class="bi bi-camera"></i> Foto lapangan <span class="text-lowercase fw-normal">(opsional)</span></div>
+        <div id="fotoKosong">
+          <button type="button" class="btn btn-garis w-100" id="btnAmbilFoto"><i class="bi bi-camera-fill"></i> Ambil foto dengan kamera</button>
+        </div>
+        <div id="fotoAda" class="d-none">
+          <div class="foto-draft">
+            <img id="fotoPratinjau" alt="Pratinjau foto lapangan">
+            <div class="flex-fill">
+              <div class="fw-bold small">Foto siap</div>
+              <div id="fotoInfo" class="text-secondary-app small"></div>
+              <div class="d-flex gap-2 mt-2">
+                <button type="button" class="btn btn-garis btn-sm" id="btnUlangiFoto"><i class="bi bi-arrow-repeat"></i> Ulangi</button>
+                <button type="button" class="btn btn-garis-bahaya btn-sm" id="btnHapusFoto"><i class="bi bi-trash3"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tombol simpan -->
+      <div class="area-simpan">
+        <button type="button" class="tombol-simpan" id="btnSimpanTitik">
+          <i class="bi bi-cloud-arrow-up-fill"></i>
+          <span>
+            <b>Simpan Titik</b>
+            <small>Citra satelit + foto → Drive &amp; Sheets</small>
+          </span>
+        </button>
+      </div>
+
+      <!-- Hasil terakhir -->
+      <div id="kartuHasil" class="kartu kartu-hasil d-none">
+        <div class="label-kecil mb-2"><i class="bi bi-check-circle-fill text-accent"></i> Titik terakhir tersimpan</div>
+        <img id="hasilGambar" class="hasil-gambar" alt="Citra satelit titik terakhir">
+        <div id="hasilInfo" class="hasil-info"></div>
+        <div class="d-flex gap-2 mt-2">
+          <button type="button" class="btn btn-accent flex-fill" id="btnDetailHasil"><i class="bi bi-images"></i> Lihat detail</button>
+          <a class="btn btn-garis flex-fill link-sheet" href="#" target="_blank" rel="noopener"><i class="bi bi-table"></i> Spreadsheet</a>
+        </div>
+      </div>
+
+      <input type="file" id="inputKamera" accept="image/*" capture="environment" class="d-none">
+    </section>
+
+    <!-- ═══════════ SECTION: RIWAYAT ═══════════ -->
+    <section id="section-riwayat" class="content-section">
+      <div class="row g-2">
+        <div class="col-4"><div class="kartu kpi"><div class="stat-nilai-besar" id="statTotal">0</div><div class="stat-label">Titik</div></div></div>
+        <div class="col-4"><div class="kartu kpi"><div class="stat-nilai-besar" id="statFoto">0</div><div class="stat-label">Dengan foto</div></div></div>
+        <div class="col-4"><div class="kartu kpi"><div class="stat-nilai-besar warna-antre" id="statAntre">0</div><div class="stat-label">Menunggu kirim</div></div></div>
+      </div>
+
+      <div id="kartuAntre" class="kartu kartu-antre mt-3 d-none">
+        <div class="d-flex align-items-center gap-3">
+          <i class="bi bi-cloud-slash fs-3"></i>
+          <div class="flex-fill">
+            <div class="fw-bold" id="teksAntre">Ada titik yang belum terkirim</div>
+            <div class="small text-secondary-app">Tersimpan aman di HP. Dikirim otomatis saat ada internet.</div>
+          </div>
+          <button type="button" class="btn btn-accent btn-sm" id="btnKirimAntre"><i class="bi bi-send"></i> Kirim</button>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-garis btn-sm link-sheet" href="#" target="_blank" rel="noopener"><i class="bi bi-table"></i> Spreadsheet</a>
+        <a class="btn btn-garis btn-sm link-folder" href="#" target="_blank" rel="noopener"><i class="bi bi-folder2-open"></i> Folder Drive</a>
+        <button type="button" class="btn btn-garis btn-sm" id="btnEksporKml"><i class="bi bi-globe-asia-australia"></i> KML</button>
+        <button type="button" class="btn btn-garis btn-sm ms-auto" id="btnMuatUlang" aria-label="Muat ulang"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+
+      <div id="daftarRiwayat" class="grid-riwayat mt-3"></div>
+    </section>
+
+    <!-- ═══════════ SECTION: PETA ═══════════ -->
+    <section id="section-peta" class="content-section">
+      <div class="wadah-peta">
+        <div id="peta"></div>
+        <div class="tombol-peta">
+          <button type="button" class="btn-peta" id="btnLokasiSaya" aria-label="Ke lokasi saya"><i class="bi bi-crosshair"></i></button>
+          <button type="button" class="btn-peta" id="btnSemuaTitik" aria-label="Tampilkan semua titik"><i class="bi bi-arrows-fullscreen"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ SECTION: PENGATURAN ═══════════ -->
+    <section id="section-pengaturan" class="content-section">
+      <div class="kartu">
+        <div class="judul-kartu">Penyimpanan Google</div>
+        <div id="infoServer" class="small text-secondary-app mb-3">Memeriksa koneksi ke Drive & Sheets...</div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-garis flex-fill link-sheet" href="#" target="_blank" rel="noopener"><i class="bi bi-table"></i> Spreadsheet</a>
+          <a class="btn btn-garis flex-fill link-folder" href="#" target="_blank" rel="noopener"><i class="bi bi-folder2-open"></i> Folder Drive</a>
+        </div>
+        <button type="button" class="btn btn-garis w-100 mt-2" id="btnAturKoneksi"><i class="bi bi-key"></i> Ubah URL API / kunci akses</button>
+      </div>
+
+      <div class="kartu mt-3">
+        <div class="judul-kartu">Citra satelit</div>
+        <label for="aturZoom" class="form-label">Tingkat perbesaran</label>
+        <select id="aturZoom" class="form-select">
+          <option value="16">Zoom 16 — cakupan ±1,5 km (kawasan)</option>
+          <option value="17">Zoom 17 — cakupan ±760 m</option>
+          <option value="18">Zoom 18 — cakupan ±380 m (disarankan)</option>
+          <option value="19">Zoom 19 — cakupan ±190 m (detail)</option>
+          <option value="20">Zoom 20 — cakupan ±95 m (sangat detail)</option>
+        </select>
+        <div class="form-text">Di daerah terpencil, zoom 19–20 kadang belum tersedia citranya. Pakai 18 bila gambar kosong.</div>
+      </div>
+
+      <div class="kartu mt-3">
+        <div class="judul-kartu">Foto lapangan & watermark</div>
+        <label for="aturResolusi" class="form-label">Ukuran foto</label>
+        <select id="aturResolusi" class="form-select mb-3">
+          <option value="1600">Hemat — 1600 px (±0,4 MB)</option>
+          <option value="2048">Standar — 2048 px (±0,7 MB)</option>
+          <option value="3072">Tinggi — 3072 px (±1,5 MB)</option>
+        </select>
+        <label for="aturKualitas" class="form-label">Kualitas JPEG</label>
+        <select id="aturKualitas" class="form-select mb-3">
+          <option value="0.8">80% — lebih kecil, unggah lebih cepat</option>
+          <option value="0.9">90% — seimbang</option>
+          <option value="0.95">95% — paling tajam</option>
+        </select>
+        <label for="aturTeksTambahan" class="form-label">Teks tambahan di watermark</label>
+        <input type="text" id="aturTeksTambahan" class="form-control mb-3" maxlength="60" placeholder="mis. Petugas: Adry">
+        <div class="form-check form-switch baris-atur">
+          <input class="form-check-input" type="checkbox" id="aturAlamat">
+          <label class="form-check-label" for="aturAlamat">Cetak alamat di foto lapangan</label>
+        </div>
+      </div>
+
+      <div class="kartu mt-3">
+        <div class="judul-kartu">Tampilan</div>
+        <div class="form-check form-switch baris-atur">
+          <input class="form-check-input" type="checkbox" id="aturTema">
+          <label class="form-check-label" for="aturTema">Mode gelap</label>
+        </div>
+      </div>
+
+      <p class="text-center text-secondary-app small mt-4 mb-0">GeoFoto Lahan v3.0.0</p>
+    </section>
+  </main>
+
+  <!-- ═══ Navigasi bawah ═══ -->
+  <nav class="bottom-nav" aria-label="Navigasi utama">
+    <button type="button" class="nav-item active" data-section="ambil"><i class="bi bi-pin-map"></i><span>Ambil</span></button>
+    <button type="button" class="nav-item" data-section="riwayat"><i class="bi bi-images"></i><span>Riwayat</span><em id="badgeRiwayat" class="badge-nav d-none">0</em></button>
+    <button type="button" class="nav-item" data-section="peta"><i class="bi bi-map"></i><span>Peta</span></button>
+    <button type="button" class="nav-item" data-section="pengaturan"><i class="bi bi-gear"></i><span>Atur</span></button>
+  </nav>
+
+  <!-- ═══ Modal: Detail titik ═══ -->
+  <div class="modal fade" id="modalDetail" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title text-truncate" id="detailJudul">Detail titik</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+        </div>
+        <div class="modal-body">
+          <div class="tab-gambar" role="tablist">
+            <button type="button" class="aktif" data-gambar="citra"><i class="bi bi-globe-asia-australia"></i> Citra satelit</button>
+            <button type="button" data-gambar="foto" id="tabFoto"><i class="bi bi-camera"></i> Foto lapangan</button>
+          </div>
+          <div class="wadah-detail-gambar">
+            <img id="detailGambar" class="detail-gambar d-none" alt="Gambar titik">
+            <div id="detailMemuat" class="detail-memuat"><div class="spinner-border"></div><div class="mt-2 small">Memuat gambar...</div></div>
+          </div>
+          <div id="detailInfo" class="detail-info mt-2"></div>
+        </div>
+        <div class="modal-footer detail-aksi">
+          <button type="button" class="btn btn-accent" id="btnDetailUnduh"><i class="bi bi-download"></i> Unduh</button>
+          <button type="button" class="btn btn-garis" id="btnDetailBagikan"><i class="bi bi-share"></i> Bagikan</button>
+          <a class="btn btn-garis" id="detailMaps" href="#" target="_blank" rel="noopener"><i class="bi bi-google"></i> Maps</a>
+          <a class="btn btn-garis" id="detailDrive" href="#" target="_blank" rel="noopener"><i class="bi bi-google"></i> Drive</a>
+          <button type="button" class="btn btn-garis" id="btnDetailPeta"><i class="bi bi-map"></i> Peta</button>
+          <button type="button" class="btn btn-garis-bahaya" id="btnDetailHapus" aria-label="Hapus"><i class="bi bi-trash3"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Modal: Konfirmasi hapus ═══ -->
+  <div class="modal fade" id="modalHapus" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Konfirmasi hapus</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+        </div>
+        <div class="modal-body"><p id="teksHapus" class="mb-0">Hapus titik ini?</p></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-garis" data-bs-dismiss="modal">Batal</button>
+          <button type="button" class="btn btn-danger" id="btnKonfirmasiHapus">Hapus</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Modal: Hubungkan ke server ═══ -->
+  <div class="modal fade" id="modalKoneksi" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="formKoneksi" novalidate>
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-plug"></i> Hubungkan ke Google</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+          </div>
+          <div class="modal-body">
+            <p class="small text-secondary-app">Diisi sekali saja di HP ini. URL &amp; kunci ada di <b>Execution Log</b> Apps Script setelah menjalankan <code>setupAppEnvironment</code>.</p>
+            <label for="inputGasUrl" class="form-label">URL API (akhiran <code>/exec</code>)</label>
+            <input type="url" id="inputGasUrl" class="form-control mb-3" required
+                   placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+            <label for="inputKunci" class="form-label">Kunci akses</label>
+            <input type="text" id="inputKunci" class="form-control text-uppercase" required maxlength="40"
+                   placeholder="mis. K7QM4TZP" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <div id="pesanKoneksi" class="small mt-2"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-garis" data-bs-dismiss="modal">Nanti</button>
+            <button type="submit" class="btn btn-accent" id="btnSimpanKoneksi"><i class="bi bi-check2"></i> Hubungkan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Toast ═══ -->
+  <div class="toast-container position-fixed start-50 translate-middle-x wadah-toast">
+    <div id="appToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-body d-flex align-items-start gap-2">
+        <i id="toastIkon" class="bi bi-info-circle-fill"></i>
+        <div class="flex-fill">
+          <strong id="toastTitle" class="d-block">Info</strong>
+          <span id="toastBody"></span>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Tutup"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
