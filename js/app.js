@@ -21,6 +21,7 @@
 const PENGATURAN_DEFAULT = {
   tema: 'light',
   zoom: '18',
+  zoomBatas: '20',        // zoom maksimum citra bila ada batas lahan
   resolusi: '2048',
   kualitas: '0.9',
   alamat: true,
@@ -197,6 +198,7 @@ function pasangEvent() {
   // Pengaturan
   byId('aturTema').addEventListener('change', (e) => { state.pengaturan.tema = e.target.checked ? 'dark' : 'light'; simpanPengaturan(); terapkanTema(state.pengaturan.tema); });
   byId('aturZoom').addEventListener('change', (e) => { state.pengaturan.zoom = e.target.value; simpanPengaturan(); gambarKotakCakupan(); });
+  byId('aturZoomBatas').addEventListener('change', (e) => { state.pengaturan.zoomBatas = e.target.value; simpanPengaturan(); gambarKotakCakupan(); });
   byId('aturResolusi').addEventListener('change', (e) => { state.pengaturan.resolusi = e.target.value; simpanPengaturan(); });
   byId('aturKualitas').addEventListener('change', (e) => { state.pengaturan.kualitas = e.target.value; simpanPengaturan(); });
   byId('aturAlamat').addEventListener('change', (e) => { state.pengaturan.alamat = e.target.checked; simpanPengaturan(); });
@@ -236,6 +238,7 @@ function isiFormPengaturan() {
   const p = state.pengaturan;
   byId('aturTema').checked = p.tema === 'dark';
   byId('aturZoom').value = String(p.zoom);
+  byId('aturZoomBatas').value = String(p.zoomBatas);
   byId('aturResolusi').value = String(p.resolusi);
   byId('aturKualitas').value = String(p.kualitas);
   byId('aturAlamat').checked = !!p.alamat;
@@ -693,21 +696,49 @@ function batasGambar(pusat, zoom) {
 }
 
 /**
- * Tentukan pusat & zoom citra satelit. Tanpa batas: pusat = titik, zoom = pengaturan.
- * Dengan batas: seluruh batas + titik dimuat dalam bingkai (sisa tepi ±40 px).
+ * Tentukan pusat & zoom citra satelit.
+ *  - Tanpa batas: pusat = titik, zoom = pengaturan "Tingkat perbesaran".
+ *  - Dengan batas: pusat = tengah lahan, zoom = SEDEKAT MUNGKIN (maks. pengaturan
+ *    "Zoom maksimum batas lahan") selama lahan masih muat ±55% lebar gambar,
+ *    sehingga bentuk lahan terlihat jelas tapi sekelilingnya tetap tampak.
  */
 function rencanaCitra(lat, lng, batas, zoomSetel) {
   if (!batas || batas.length < 3) return { pusat: { lat, lng }, zoom: zoomSetel };
-  const semua = batas.concat([[lat, lng]]);
-  for (let z = zoomSetel; z >= 12; z--) {
-    const px = semua.map(p => proyeksiPx(p[0], p[1], z));
+  const zMaks = Math.min(21, Math.max(15, Number(state.pengaturan.zoomBatas) || 20));
+  const RUANG = 350; // piksel dari 640 yang boleh dipakai lahan
+  for (let z = zMaks; z >= 12; z--) {
+    const px = batas.map(p => proyeksiPx(p[0], p[1], z));
     const minX = Math.min(...px.map(p => p.x)), maxX = Math.max(...px.map(p => p.x));
     const minY = Math.min(...px.map(p => p.y)), maxY = Math.max(...px.map(p => p.y));
-    if (maxX - minX <= 560 && maxY - minY <= 560 || z === 12) {
+    if ((maxX - minX <= RUANG && maxY - minY <= RUANG) || z === 12) {
       return { pusat: pxKeLatLng((minX + maxX) / 2, (minY + maxY) / 2, z), zoom: z };
     }
   }
   return { pusat: { lat, lng }, zoom: zoomSetel };
+}
+
+/**
+ * Cek apakah citra "kosong" (Google belum punya foto satelit di zoom itu —
+ * gambar abu-abu polos bertuliskan "Sorry, we have no imagery here").
+ */
+async function citraKosong(base64, mime) {
+  try {
+    const img = await muatGambar('data:' + (mime || 'image/jpeg') + ';base64,' + base64);
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, 64, 64);
+    const d = ctx.getImageData(0, 0, 64, 64).data;
+    let jml = 0, jml2 = 0, jenuh = 0;
+    const n = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) {
+      const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      jml += y; jml2 += y * y;
+      jenuh += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
+    }
+    const rata = jml / n, simpang = Math.sqrt(Math.max(0, jml2 / n - rata * rata));
+    return simpang < 9 && jenuh / n < 12 && rata > 150;  // hampir seragam, abu-abu terang
+  } catch (e) { return false; }
 }
 
 // ════════════════════════════════════════════════════════
@@ -852,7 +883,10 @@ async function buatCitraWatermark(base64, mime, rec) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, W, H);
 
-  if (rec.batas) gambarBatasDiCitra(ctx, rec.batas, pusat, zoom, faktor, s, rec.luas);
+  if (rec.batas) {
+    gambarTitikKecil(ctx, rec.lat, rec.lng, pusat, zoom, faktor, s);   // di bawah nomor sudut
+    gambarBatasDiCitra(ctx, rec.batas, pusat, zoom, faktor, s, rec.luas);
+  }
 
   ctx.fillStyle = '#121a15';
   ctx.fillRect(0, H, W, tp);
@@ -895,18 +929,30 @@ function gambarBatasDiCitra(ctx, batas, pusat, zoom, faktor, s, luas) {
     ctx.fillText(String(i + 1), p[0], p[1] + 0.5 * s);
   });
 
-  // Label luas di tengah lahan
-  const ll = pusatPoligon(batas);
-  const q = proyeksiPx(ll[0], ll[1], zoom);
-  // digeser ke bawah agar tidak tertutup pin merah Google bila titik ada di tengah lahan
-  const lx = (q.x - c.x + 320) * faktor, ly = (q.y - c.y + 320) * faktor + 34 * s;
-  const label = formatLuas(luas).ha;
+  // Label luas di BAWAH lahan (tidak menutupi bentuk lahan)
+  const minX = Math.min(...pt.map(p => p[0])), maxX = Math.max(...pt.map(p => p[0]));
+  const maxY = Math.max(...pt.map(p => p[1]));
+  const label = formatLuas(luas).m2 + ' · ' + formatLuas(luas).ha;
   ctx.font = '800 ' + Math.round(22 * s) + 'px ' + FONT_WM;
   const lw = ctx.measureText(label).width + 22 * s, lh = 36 * s;
+  const W = 640 * faktor;
+  const lx = Math.min(Math.max((minX + maxX) / 2, lw / 2 + 8 * s), W - lw / 2 - 8 * s);
+  const ly = Math.min(maxY + 16 * s + lh / 2, W - 110 * s);
   ctx.fillStyle = 'rgba(0,0,0,0.62)';
   kotakBulat(ctx, lx - lw / 2, ly - lh / 2, lw, lh, 10 * s); ctx.fill();
   ctx.fillStyle = '#ffd21f';
   ctx.fillText(label, lx, ly + 1 * s);
+  ctx.restore();
+}
+
+/** Penanda titik kecil (pengganti pin Google saat ada batas lahan). */
+function gambarTitikKecil(ctx, lat, lng, pusat, zoom, faktor, s) {
+  const c = proyeksiPx(pusat.lat, pusat.lng, zoom), q = proyeksiPx(lat, lng, zoom);
+  const x = (q.x - c.x + 320) * faktor, y = (q.y - c.y + 320) * faktor;
+  if (x < 0 || y < 0 || x > 640 * faktor || y > 640 * faktor) return;
+  ctx.save();
+  ctx.fillStyle = '#e5392f'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5 * s;
+  ctx.beginPath(); ctx.arc(x, y, 7 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.restore();
 }
 
@@ -1193,7 +1239,13 @@ async function kirimSatu(rec, tampil) {
     if (!rec.citraBlob) {
       langkah('Mengambil citra satelit...');
       const pusat = rec.pusat || { lat: rec.lat, lng: rec.lng };
-      const c = await panggil('ambilCitraSatelit', rec.lat, rec.lng, rec.zoom, pusat.lat, pusat.lng);
+      const tanpaPenanda = !!(rec.batas && rec.batas.length >= 3);
+      let c = await panggil('ambilCitraSatelit', rec.lat, rec.lng, rec.zoom, pusat.lat, pusat.lng, tanpaPenanda);
+      // Citra belum tersedia di zoom setinggi itu → turunkan zoom sampai ada gambarnya
+      while (await citraKosong(c.base64, c.mime) && c.zoom > 17) {
+        langkah('Citra zoom ' + c.zoom + ' belum tersedia, mencoba zoom ' + (c.zoom - 1) + '...');
+        c = await panggil('ambilCitraSatelit', rec.lat, rec.lng, c.zoom - 1, pusat.lat, pusat.lng, tanpaPenanda);
+      }
       rec.alamat = c.alamat || null;
       rec.zoom = c.zoom || rec.zoom;
       rec.pusat = c.pusat || pusat;

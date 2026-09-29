@@ -229,7 +229,7 @@
 
       <div class="kartu mt-3">
         <div class="judul-kartu">Citra satelit</div>
-        <label for="aturZoom" class="form-label">Tingkat perbesaran</label>
+        <label for="aturZoom" class="form-label">Tingkat perbesaran (titik tanpa batas)</label>
         <select id="aturZoom" class="form-select">
           <option value="16">Zoom 16 — cakupan ±1,5 km (kawasan)</option>
           <option value="17">Zoom 17 — cakupan ±760 m</option>
@@ -237,7 +237,15 @@
           <option value="19">Zoom 19 — cakupan ±190 m (detail)</option>
           <option value="20">Zoom 20 — cakupan ±95 m (sangat detail)</option>
         </select>
-        <div class="form-text">Di daerah terpencil, zoom 19–20 kadang belum tersedia citranya. Pakai 18 bila gambar kosong.</div>
+        <div class="form-text mb-3">Dipakai untuk titik tanpa batas lahan.</div>
+
+        <label for="aturZoomBatas" class="form-label">Zoom maksimum bila ada batas lahan</label>
+        <select id="aturZoomBatas" class="form-select">
+          <option value="19">Zoom 19</option>
+          <option value="20">Zoom 20 (disarankan)</option>
+          <option value="21">Zoom 21 — paling dekat (umumnya hanya di kota)</option>
+        </select>
+        <div class="form-text">Citra otomatis mendekat sampai lahan memenuhi ±separuh gambar. Bila citra zoom tinggi belum tersedia, aplikasi otomatis turun ke zoom yang ada.</div>
       </div>
 
       <div class="kartu mt-3">
@@ -270,7 +278,7 @@
         </div>
       </div>
 
-      <p class="text-center text-secondary-app small mt-4 mb-0">GeoFoto Lahan v3.1.0</p>
+      <p class="text-center text-secondary-app small mt-4 mb-0">GeoFoto Lahan v3.2.0</p>
     </section>
   </main>
 
